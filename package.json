@@ -1,0 +1,12 @@
+{
+  "name": "test-cli",
+  "version": "1.0.0",
+  "description": "My first CLI program",
+  "main": "index.js", 
+  "bin": {
+    "devtool": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}
