@@ -1,4 +1,4 @@
-# CLI 프로그램 개발 방법 요약
+# [CLI 프로그램 개발 방법 요약]
 
 
 
@@ -167,3 +167,144 @@ devtool hello 정민
 devtool add 10 20 
 ```
 출력: 계산 결과: 30 
+
+
+# [Node.js MCP 서버 구현]
+
+## 1. 프로젝트 구조
+
+기존 CLI 프로그램에 MCP 서버를 추가하여 Codex에서도 동일한 계산 기능을 사용할 수 있도록 구현한다.
+
+```text
+Test-CLI/
+├── package.json       # 기존 CLI 명령어 및 의존성 관리
+├── index.js           # 기존 CLI 명령어 처리
+├── calculator.js      # 기존 공통 계산 로직
+└── mcp-server.js      # MCP 서버 및 도구 등록
+```
+
+**CLI:** 사용자 → `index.js` → `calculator.js`
+
+**MCP:** Codex → `mcp-server.js` → `calculator.js`
+
+## 2. MCP SDK 설치
+
+```bash
+npm install @modelcontextprotocol/server zod
+```
+
+- `@modelcontextprotocol/server`: MCP 서버 구현
+- `zod`: 도구 입력값의 타입 검증
+
+## 3. MCP 서버 구현
+
+**calculator.js**
+
+```javascript
+function add(a, b) {
+    return a + b;
+}
+
+module.exports = { add };
+```
+
+**mcp-server.js**
+
+```javascript
+const { add } = require("./calculator");
+
+async function main() {
+    const { McpServer } =
+        await import("@modelcontextprotocol/server");
+    const { StdioServerTransport } =
+        await import("@modelcontextprotocol/server/stdio");
+    const z = await import("zod/v4");
+
+    // MCP 서버 생성
+    const server = new McpServer({
+        name: "my-calculator",
+        version: "1.0.0"
+    });
+
+    // AI가 사용할 도구 등록
+    server.registerTool(
+        "add",
+        {
+            description: "두 숫자를 더합니다.",
+            inputSchema: z.object({
+                a: z.number(),
+                b: z.number()
+            })
+        },
+        async ({ a, b }) => ({
+            content: [{
+                type: "text",
+                text: String(add(a, b))
+            }]
+        })
+    );
+
+    // 표준 입출력 통신 연결
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+}
+
+main().catch(console.error);
+```
+
+| 코드 | 역할 |
+|---|---|
+| `McpServer` | MCP 서버 생성 |
+| `registerTool()` | AI가 호출할 기능 등록 |
+| `inputSchema` | 입력 파라미터 정의 |
+| `StdioServerTransport` | Codex와 stdin/stdout 통신 |
+| `server.connect()` | MCP 통신 시작 |
+
+## 4. MCP 서버 실행 및 Codex 연결
+
+**① 서버 실행 확인**
+
+```bash
+node mcp-server.js
+```
+
+오류 없이 실행되고 입력을 기다리면 `Ctrl + C`로 종료한다.
+
+**② Codex에 MCP 서버 등록**
+
+```bash
+codex mcp add my-calculator -- node /mnt/c/dev/Test-CLI/mcp-server.js
+```
+
+**③ 등록 확인 및 테스트**
+
+```bash
+codex mcp list
+codex
+```
+
+Codex에 다음과 같이 요청한다.
+
+> my-calculator의 add 도구를 사용해서 10과 20을 더해줘.
+
+실제 실행 결과:
+
+```text
+• Called my-calculator.add
+  └ 30
+```
+
+## 5. 실행 화면
+
+**MCP 도구 호출 화면**
+
+![MCP 호출 결과](./image/MCP실행화면.png)
+
+## 6. 핵심 정리
+
+- **CLI:** 사람이 터미널 명령어로 기능 호출
+- **MCP 서버:** Codex가 MCP 도구를 통해 기능 호출
+- **공통 로직:** `calculator.js`를 재사용하므로 기능을 중복 구현할 필요가 없음
+- **배포:** CLI와 MCP 서버를 하나의 npm 패키지로 제공 가능
+
+**결론:** MCP 서버는 새로운 비즈니스 로직을 만드는 것이 아니라 기존 기능을 AI 에이전트가 호출할 수 있도록 도구로 공개하는 프로그램이다.
